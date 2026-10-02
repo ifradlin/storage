@@ -1,0 +1,54 @@
+name: Publish ARROW assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: ARROW asset release tag
+        required: true
+        default: arrow-assets-2026-10-02
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'arrow-assets-')
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Download and verify release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          mkdir release
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern arrow-assets.tar.gz --pattern asset-inventory.json \
+            --pattern SHA256SUMS --dir release
+          cd release
+          sha256sum --check SHA256SUMS
+      - name: Extract website assets
+        run: |
+          mkdir -p _site/arrow
+          tar -xzf release/arrow-assets.tar.gz -C _site/arrow
+          cp release/asset-inventory.json _site/arrow/
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
